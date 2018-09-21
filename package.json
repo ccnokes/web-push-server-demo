@@ -1,0 +1,19 @@
+{
+  "name": "web-push-backend-demo",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "prepublish": "[[ ! -f creds.json ]] && web-push generate-vapid-keys --json > creds.json"
+  },
+  "keywords": [],
+  "author": "Cameron Nokes",
+  "license": "ISC",
+  "dependencies": {
+    "fastify": "^1.11.2",
+    "fastify-cors": "^0.1.0",
+    "nedb": "^1.8.0",
+    "web-push": "^3.3.3"
+  }
+}
