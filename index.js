@@ -1,4 +1,4 @@
-const fastify = require('fastify')({
+const app = require('fastify')({
   logger: true
 });
 const creds = require('./creds.json');
@@ -11,19 +11,19 @@ const remove = promisify(db.remove.bind(db));
 const insert = promisify(db.insert.bind(db));
 const loadDatabase = promisify(db.loadDatabase.bind(db));
 
-// enable CORS for easier local development
-fastify.register(require('fastify-cors'), {
+// enable CORS for easier local development. Don't do this in a production app.
+app.register(require('fastify-cors'), {
   origin: true,
   methods: ['GET', 'PUT', 'POST', 'DELETE']
 });
 
-fastify.get('/public-key', async (request, reply) => {
+app.get('/public-key', async (request, reply) => {
   return {
     publicKey: creds.publicKey
   };
 });
 
-fastify.post(
+app.post(
   '/register',
   {
     schema: {
@@ -41,47 +41,28 @@ fastify.post(
     }
   },
   async (request, reply) => {
-    fastify.log.info(`register push subscription for user ${request.body.userId}`);
+    app.log.info(`register push subscription for user ${request.body.userId}`);
 
-    let now = Date.now();
-    let document = Object.assign(request.body, {
-      created: now,
-      lastModified: now,
-      service: new URL(request.body.endpoint).host
-    });
+    let document = Object.assign(request.body, { created: Date.now() });
 
     // check if this subscription is already registered
     let existingSub = await findOne({
       userId: request.body.userId,
       endpoint: request.body.endpoint
     });
+
     if (!existingSub) {
-      fastify.log.info(`no subscription found, creating`);
+      app.log.info(`no subscription found, creating`);
       await insert(document);
+      reply.code(201).send('');
     } else {
-      fastify.log.info(`subscription found, updating`);
-      await update({ _id: existingSub._id }, { $set: { lastModified: Date.now() } });
+      app.log.info(`subscription already exists`);
+      reply.code(200).send('');
     }
-
-    // check for old subscriptions from the same service as this one that we can drop
-    let oldSubs = await find({
-      userId: request.body.userId,
-      service: document.service,
-      endpoint: { $ne: request.body.endpoint }
-    });
-
-    if (oldSubs.length > 0) {
-      fastify.log.info(`dropping ${oldSubs.length} old subscription(s)`);
-      await Promise.all(oldSubs.map(sub => {
-        return remove({ _id: sub._id });
-      }));
-    }
-
-    reply.code(200).send('');
   }
 );
 
-fastify.post(
+app.post(
   '/deregister',
   {
     schema: {
@@ -95,13 +76,13 @@ fastify.post(
     }
   },
   async (request, reply) => {
-    fastify.log.info(`deregister push subscription for user ${request.body.userId}`);
+    app.log.info(`deregister push subscription for user ${request.body.userId}`);
     await remove(request.body);
     reply.code(200).send('');
   }
 );
 
-fastify.post(
+app.post(
   '/push',
   {
     schema: {
@@ -133,11 +114,11 @@ fastify.post(
         catch (error) {
           // a push service will return a 410 if a subscription has been deactivated
           // See https://developers.google.com/web/fundamentals/push-notifications/common-issues-and-reporting-bugs#http_status_codes
-          if (error.statusCode === 410) {
-            fastify.log.info(`Removing de-registered subscription`);
+          if (error.statusCode === 410 || error.statusCode === 404) {
+            app.log.info(`Removing de-registered subscription`);
             await remove({ _id: sub._id });
           } else {
-            fastify.log.error(error);
+            app.log.error(error);
           }
         }
 
@@ -145,7 +126,7 @@ fastify.post(
       reply.code(200).send(`Sent ${subs.length} messages`);
     }
     catch (error) {
-      fastify.log.error(error);
+      app.log.error(error);
       reply.code(500).send(error.message);
     }
   }
@@ -161,10 +142,10 @@ async function start() {
 
   try {
     await loadDatabase();
-    await fastify.listen(3000);
+    await app.listen(3000);
   }
   catch (err) {
-    fastify.log.error(err);
+    app.log.error(err);
     process.exit(1);
   }
 }
